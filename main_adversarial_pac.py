@@ -30,6 +30,8 @@ ALGORITHMS_ONLINE = (
 
 ALGORITHMS_PRED= (
   algorithms.FTP,
+  algorithms.OnlineLearning,
+  algorithms.Buy,
   # algorithms.FTP_multiple,
   # algorithms.RhoMu_paretomu_1_05,
   # algorithms.RhoMu_paretomu_1_1,
@@ -63,28 +65,27 @@ ALGORITHMS_PAC= (
   # algorithms.PACPredict2,
   # algorithms.PACPredict3,
   algorithms.PACPredictRand1,
-  algorithms.PACPredictRand2,
-  algorithms.OnlineLearning,
-  algorithms.Buy,
+  # algorithms.PACPredictRand2,
   # algorithms.Kumar1,
   # algorithms.Kumar2,
   # algorithms.Kumar3,
-  algorithms.Meta1,
-  algorithms.Meta2,
+  # algorithms.Meta1,
+  # algorithms.Meta2,
 )
 
 ALGORITHMS_PPP= (
   algorithms.PPPAlgorithm,
 )
 
-def RunnerForPool(algorithm, requests, predictions):
-  return algorithms.Cost(algorithm(requests, predictions), requests, algorithm.__name__)
-
-def RunnerForPoolPAC(algorithm, requests, predictions, sigmas):
+def RunnerForPool(algorithm, requests, predictions, sigmas):
   return algorithms.Cost(algorithm(requests, predictions, sigmas), requests, algorithm.__name__)
 
+def RunnerForPoolPAC(algorithm, requests, predictions, sigmas):
+  history, nature = algorithm(requests, predictions, sigmas)
+  return algorithms.Cost(history, requests, algorithm.__name__), nature
+
 def PlotPredRandom(datasets, num_runs, output_basename=None, load_json=None, keep='best'):
-  ALGORITHMS = ALGORITHMS_ONLINE + ALGORITHMS_PRED + ALGORITHMS_PAC + ALGORITHMS_PPP
+  ALGORITHMS = ALGORITHMS_PAC + ALGORITHMS_PRED + ALGORITHMS_ONLINE
   with open(datasets[0]) as f:
     MAX_REQUEST = np.ceil(max(float(line) for line in f))
   SIGMAS = [MAX_REQUEST * i / 8 for i in range(10)]
@@ -130,20 +131,10 @@ def PlotPredRandom(datasets, num_runs, output_basename=None, load_json=None, kee
         args = [(ALGORITHMS_PAC[algorithm_idx], requests, predictions[sigma_idx][run_idx], sigmas[sigma_idx])
                 for algorithm_idx, sigma_idx, run_idx in grid]
         runs = pool.starmap(RunnerForPoolPAC, args)
-        for (algorithm_idx, sigma_idx, run_idx), cost in zip(grid, runs):
+        natures = np.zeros((num_runs,len(requests)))
+        for (algorithm_idx, sigma_idx, run_idx), (cost,nature) in zip(grid, runs):
           costs[len(ALGORITHMS_ONLINE) + len(ALGORITHMS_PRED) + algorithm_idx][sigma_idx][run_idx] += cost
-
-      ppp_predictor = lambda sigma: algorithms.PPP(requests, sigma)
-
-      ppp = [[ppp_predictor(sigma) for _ in range(num_runs)] for sigma in SIGMAS]
-
-      with Pool() as pool:
-        grid = list(itertools.product(range(len(ALGORITHMS_PPP)), range(len(SIGMAS)), range(num_runs)))
-        args = [(ALGORITHMS_PPP[algorithm_idx], requests, ppp[sigma_idx][run_idx])
-                for algorithm_idx, sigma_idx, run_idx in grid]
-        runs = pool.starmap(RunnerForPool, args)
-        for (algorithm_idx, sigma_idx, run_idx), cost in zip(grid, runs):
-          costs[len(ALGORITHMS_ONLINE) + len(ALGORITHMS_PRED) + len(ALGORITHMS_PAC) + algorithm_idx][sigma_idx][run_idx] += cost
+          natures[run_idx,:] = nature
 
   if output_basename:
     with open(output_basename + '.json', 'w') as f:
@@ -188,15 +179,15 @@ def PlotPredRandom(datasets, num_runs, output_basename=None, load_json=None, kee
       # "Kumar1": "Kumar (0.2)",
       # "Kumar2": "Kumar (0.5)",
       # "Kumar3": "Kumar (0.8)",
-      "Meta1": "Meta (0.1)",
-      "Meta2": "Meta (0.01)",
+      # "Meta1": "Meta (0.1)",
+      # "Meta2": "Meta (0.01)",
       "OnlineLearning": "Online Learning",
       # "Buy": "Buy",
       # "PACPredict1": "PAC algorithm (0.1)",
       # "PACPredict2": "PAC algorithm (0.05)",
       # "PACPredict3": "PAC algorithm (0.01)",
       "PACPredictRand1": "Random PAC (0.1)",
-      "PACPredictRand2": "Random PAC (0.01)",
+      # "PACPredictRand2": "Random PAC (0.01)",
       # "PPPAlgorithm": "PPP algorithm (0.5)",
     }
   elif (keep=='prudent'):

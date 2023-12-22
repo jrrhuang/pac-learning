@@ -7,7 +7,7 @@ from scipy.stats import norm
 import collections
 import networkx as nx
 from operator import add
-from scipy.optimize import fsolve, linprog, minimize
+from scipy.optimize import fsolve, linprog
 from scipy.special import lambertw
 import cvxpy as cp
 
@@ -24,8 +24,8 @@ WAKE_UP_COSTS = [0, 0.12, 0.33, 1.] # assume all are interesting at some point
 
 # Rent and buy costs
 R = 1
-# B = 40
-B = 80
+B = 2
+# B = 1
 
 # PAC parameter
 # delta
@@ -61,7 +61,8 @@ def binary_search(f, y, lo, hi, delta):
 def PredRandom(requests,sigma=0.5):
   # noise = np.round(np.random.normal(0,sigma,len(requests)))
   noise = np.random.normal(0,sigma,len(requests))
-  return  [max(1,x) for x in requests+noise]
+  # return  [max(1,x) for x in requests+noise]
+  return  [max(0,x) for x in requests+noise]
 
 def PPP(requests, sigma=0.5, d=d_ppp):
   # noise = np.round(np.random.normal(0,sigma,len(requests)))
@@ -71,26 +72,6 @@ def PPP(requests, sigma=0.5, d=d_ppp):
 
 def Buy(requests, pred=[], sigmas=[], B=B):
   return [0 for x in requests]
-  
-
-def PredHelmbold(requests, ETA=4.0):
-  ALPHA = 0.08
-  LALPHA = np.log(1.0 - ALPHA)
-  MAX_TIMEOUT = (WAKE_UP_COSTS[-1] - WAKE_UP_COSTS[-2]) / POWER_CONSUMPTIONS[-2]
-  N = 25
-  TIMEOUT = np.array([MAX_TIMEOUT / (1.15 ** i) for i in range(N)])
-  weight = np.ones(N) / N
-  predictions = []
-  for request in requests:
-    weight = weight / np.sum(weight)
-    prediction = np.sum(TIMEOUT * weight)
-    predictions.append(prediction)
-    loss = np.abs(TIMEOUT - request) / MAX_TIMEOUT
-    weight = weight * np.exp(-ETA * loss)
-    alphas = np.exp(LALPHA * loss)
-    pool = np.sum(weight * (1 - alphas))
-    weight = weight * alphas + pool / N
-  return predictions
 
 
 # #################### Predictions end here ####################
@@ -110,7 +91,7 @@ def ClassicRandom(requests, pred=[]):
   res = [0] * len(requests)
   for t, req in enumerate(requests):
     buy = B*np.log(1+np.random.rand()*(np.expm1(1)))
-    res[t] = buy
+    res[t] = max(1,buy)
   return res
   
 # 2-competitive algorithm
@@ -119,80 +100,12 @@ def ClassicDet(requests, pred=[]):
   for t, req in enumerate(requests):
     res[t] = B
   return res
-
-# Kumar Purohit Svitkina algorithm. 
-# rho parameter: consistency
-# def KumarRandom(requests, pred, sigma, rho = 1.4):  
-#   lambd = inverse(lambda x : x/(1-np.exp(-x))) (rho)
-#   res = [0] * len(requests)
-#   for t, req in enumerate(requests):
-#     k = lambd if pred[t] >= B else B/lambd
-#     buy = np.log(1+np.random.rand()*(np.expm1(k)))
-#     res[t] = buy
-#   return res
-
-def KumarRandom(requests, pred, lmbda=0.2):
-  res = [0] * len(requests)
-  for t, req in enumerate(requests):
-    if pred[t] >= B:
-      k = int(np.floor(lmbda*B))
-      prob = [((B-1)/B)**(k-i)/(B*(1-(1-1/B)**k)) for i in range(1,k+1)]
-      res[t] = np.random.choice(np.arange(1,k+1), p=prob)
-    else:
-      ell = int(np.ceil(B/lmbda))
-      prob = [((B-1)/B)**(ell-i)/(B*(1-(1-1/B)**ell)) for i in range(1,ell+1)]
-      res[t] = np.random.choice(np.arange(1,ell+1), p=prob)
-  return res
-
-def Kumar1(requests, pred, sigmas):
-  return KumarRandom(requests, pred, lmbda=0.2)
-
-def Kumar2(requests, pred, sigmas):
-  return KumarRandom(requests, pred, lmbda=0.5)
-
-def Kumar3(requests, pred, sigmas):
-  return KumarRandom(requests, pred, lmbda=0.8)
-
-def Meta(requests, pred, sigmas, d):
-  res = [0] * len(requests)
-  z = norm.ppf(1-d/2)
-  for t, req in enumerate(requests):
-    if t % 1000 == 0:
-      print(t)
-    l, u = max(1,pred[t] - z*sigmas[t]), pred[t] + z*sigmas[t]
-    def fun_cr(x):
-      return d / (1-np.exp(-(x-1/B))) + (1-d)*x/(1-np.exp(-x))*(1+(u-l)/(2*min(l,B)))
-    r = minimize(fun_cr, 0.5, bounds=((1/B,1),))
-    lmbda = r.x[0]
-    if pred[t] >= B:
-      k = int(np.floor(lmbda*B))
-      prob = [((B-1)/B)**(k-i)/(B*(1-(1-1/B)**k)) for i in range(1,k+1)]
-      res[t] = np.random.choice(np.arange(1,k+1), p=prob)
-    else:
-      ell = int(np.ceil(B/lmbda))
-      prob = [((B-1)/B)**(ell-i)/(B*(1-(1-1/B)**ell)) for i in range(1,ell+1)]
-      res[t] = np.random.choice(np.arange(1,ell+1), p=prob)
-  return res
-
-def Meta1(requests, pred, sigmas):
-  return Meta(requests, pred, sigmas, 0.1)
-
-def Meta2(requests, pred, sigmas):
-  return Meta(requests, pred, sigmas, 0.01)
   
 # either buys at time 0 or never
-def FTP(requests, pred):
+def FTP(requests, pred, sigmas=[]):
   res = [0] * len(requests)
   for t, req in enumerate(requests):
-     res[t] = 1 if pred[t]>=B else requests[t]+1000
-  return res
-
-# deterministic algorithm from Angelopoulos et al
-def AngelopoulosDet(requests, pred, rho=RHO_LIMIT):
-  res = [0] * len(requests)
-  for t, req in enumerate(requests):
-    buy = 1 if pred[t]<=1 else rho-1
-    res[t] = buy
+     res[t] = 1 if np.round(pred[t])>=B else requests[t]+1000
   return res
 
 def PACPredict(requests, pred, sigmas, d):
@@ -216,6 +129,7 @@ def PACPredict(requests, pred, sigmas, d):
         res[t] = u
   return res
 
+# Implementation using scipy
 def PACPredictRand(requests, pred, sigmas, d):
   # NOTE: assumes skiing days lower bounded by 1
   result = [0] * len(requests)
@@ -223,8 +137,8 @@ def PACPredictRand(requests, pred, sigmas, d):
   for t, req in enumerate(requests):
     if t % 1000 == 0:
       print(t)
-    l, u = max(1,pred[t] - z*sigmas[t]), pred[t] + z*sigmas[t]
-    l, u = pred[t] - z*sigmas[t], pred[t] + z*sigmas[t]
+    l, u = max(1,np.floor(pred[t] - z*sigmas[t])), min(10,np.ceil(pred[t] + z*sigmas[t]))
+    # l, u = pred[t] - z*sigmas[t], pred[t] + z*sigmas[t]
     if u < B:
       c = np.zeros((B+2,))
       c[:2] = np.array([1-d,d])
@@ -281,43 +195,7 @@ def PACPredictRand(requests, pred, sigmas, d):
     result[t] = action
   return result
 
-
-# def PACPredictRand(requests, pred, sigmas, d):
-#   # NOTE: assumes skiing days lower bounded by 1
-#   MAX_REQUEST = int(np.ceil(max(requests)))
-#   result = [0] * len(requests)
-#   z = norm.ppf(1-d/2)
-#   for t, req in enumerate(requests):
-#     if t % 1000 == 0:
-#       print(t)
-#     l, u = max(1,pred[t] - z*sigmas[t]), pred[t] + z*sigmas[t]
-#     l, u = pred[t] - z*sigmas[t], pred[t] + z*sigmas[t]
-    
-#     c = np.zeros((MAX_REQUEST+2,))
-#     c[:2] = np.array([1-d,d])
-#     A_ub = np.zeros((MAX_REQUEST+1,MAX_REQUEST+2))
-#     for T_idx in range(MAX_REQUEST):
-#       T = T_idx + 1
-#       if l <= T and T <= u:
-#         A_ub[T_idx,0] = -min(T,B)
-#       else:
-#         A_ub[T_idx,1] = -min(T,B)
-#       A_ub[T_idx,2:] = np.array([B+t-1 if t <= T else T for t in range(1,MAX_REQUEST+1)])
-#     A_ub[MAX_REQUEST,:2] = np.array([1,-1])
-#     b_ub = np.zeros((MAX_REQUEST+1,))
-
-#     bounds = [(1,None)]*2 + [(0,None)]*MAX_REQUEST
-#     A_eq = [[0]*2+[1]*MAX_REQUEST]
-#     b_eq = [1]
-
-#     res = linprog(c, A_ub, b_ub, A_eq, b_eq, bounds)
-#     dist = np.array(res.x[2:])
-#     dist[dist < 0] = 0
-#     action = np.random.choice(range(MAX_REQUEST), p=dist) + 1
-#     result[t] = action
-#   return result
-
-
+# Implementation using cvxpy
 def PACPredictRandCVX(requests, pred, sigmas, d):
   # NOTE: assumes skiing days lower bounded by 1
   result = [0] * len(requests)
@@ -390,7 +268,9 @@ def PACPredictRandCVX(requests, pred, sigmas, d):
     else:
       dist[dist < 0] = 0
       action = np.random.choice(range(B+1), p=dist)
-      if action == B:
+      if action == B-1:
+        action = u
+      elif action == B:
         action = u+1
       else:
         action += 1
@@ -504,6 +384,18 @@ def ParetoMu(rho):
 
 # #################### Utils for RhoMu ends here ####################
   
+
+# Kumar Purohit Svitkina algorithm. 
+# rho parameter: consistency
+def KumarRandom(requests, pred, sigma, rho = 1.1):  
+  lambd = inverse(lambda x : x/(1-np.exp(-x))) (rho)
+  res = [0] * len(requests)
+  for t, req in enumerate(requests):
+    k = lambd if pred[t] >= B else B/lambd
+    buy = np.log(1+np.random.rand()*(np.expm1(k)))
+    res[t] = buy
+  return res
+
   
 def RhoMu_paretomu(requests, pred, rho = RHO_LIMIT):
   res = [0] * len(requests)
@@ -525,6 +417,7 @@ def RhoMu_paretomu(requests, pred, rho = RHO_LIMIT):
 # Combine randomly 2 ski-rental algorithms
 # algs: list of algorithms to combine
 # parameterized by epsilon
+
 
 def Combine_rand_discrete(requests, pred, algs, epsilon=0.1, A=1, B=B):
   diameter = 0.5
@@ -602,30 +495,40 @@ def Combine_rand(requests, pred, algs, epsilon=0.1):
   return history
 
 
-def OnlineLearning(requests, pred, sigmas, s_num=10, epsilon=0.1, A=1, B=B):
+def OnlineLearning(requests, pred, sigmas, s_num=8, epsilon=0.1, A=1, B=B):
   diameter = 0.5
   beta = 1.0 - 0.5 * epsilon
   beta2 = 0.8
   sigma_num = s_num
-  # x_num = int(max(requests) + 1)
-  x_num = 20
-  scale_max = max(sigmas)
-  scale_min = min(sigmas)
+  z = norm.ppf(1-0.1/2)
+  # l, u = pred[t] - z*sigmas[t], pred[t] + z*sigmas[t]
+  L = [np.floor(max(1,pred[t]-z*sigmas[t])) for t in range(len(sigmas))]
+  U = [np.ceil(min(10,pred[t]+z*sigmas[t])) for t in range(len(sigmas))]
+
+  # sigmas = [2*z*sigmas[t] for t in range(len(sigmas))]
+  x_num = 8
+  # scale_max = max(sigmas)
+  # scale_min = min(sigmas)
 
   history = []
-  sigma_range = np.linspace(scale_min, scale_max+0.001, sigma_num)
-  x_range = np.linspace(1,np.ceil(max(requests)), x_num)
-  # x_range = np.arange(x_num)
+  # sigma_range = np.linspace(scale_min, scale_max+0.001, sigma_num)
+  L_range = np.linspace(1,8.001, sigma_num)
+  U_range = np.linspace(1,8.001, sigma_num)
+  # x_range = np.linspace(1,np.ceil(max(requests)), x_num)
+  x_range = np.arange(1,x_num+1)
   # weights of hedge algorithm
-  weights = np.ones(((sigma_num-1)*(x_num),x_num)) / x_num
+  weights = np.ones(((sigma_num**2)*(x_num),x_num)) / x_num
   
   for t, request in enumerate(requests):
     # Get index of online learning algorithm
-    sigma = sigmas[t]
+    # sigma = sigmas[t]
     pred_t = pred[t]
-    s = np.digitize(np.array([sigma]), sigma_range, right=True)[0] - 1
+    l,u = L[t], U[t]
+    s_l = np.digitize(np.array([l]), L_range, right=False)[0] - 1
+    s_u = np.digitize(np.array([u]), U_range, right=False)[0] - 1
+    # s = np.digitize(np.array([sigma]), sigma_range, right=False)[0] - 1
     pt = np.digitize(np.array([pred_t]), x_range, right=True)[0] - 1
-    idx = s*(x_num)+pt
+    idx = s_u*sigma_num*x_num+s_l*(x_num)+pt
     action = np.random.choice(x_range, p=weights[idx,:])
     # loss = [B+A*x if x < requests[t] else A*requests[t] for x in x_range]
     loss = [(B+A*x-1)/min(B,request) if x <= requests[t] else A*request/min(B,request) for x in x_range]
@@ -634,28 +537,22 @@ def OnlineLearning(requests, pred, sigmas, s_num=10, epsilon=0.1, A=1, B=B):
     weights[idx,:] = weights[idx,:] / sum(weights[idx,:])
 
     history.append(action)
-  # if sigmas[0] == 4.5:
-  #   print(history[-20:])
-  #   print(pred[-20:])
   return history
+
+
+def OLDynamic(requests, pred, sigmas):
+  return OnlineLearning(requests, pred, sigmas)
+
+
+def OLStatic(requests, pred, sigmas):
+  return OnlineLearning(requests, pred, sigmas, s_num=1)
 
 
 def RobustFTP(requests, pred):
   return Combine_rand(requests, pred, (FTP, ClassicRandom))
-
-
-def RobustKumar(requests, pred):
-  return Combine_rand(requests, pred, [
-      FTP,
-      lambda r, p : KumarRandom(r, p, 1.1),
-      lambda r, p : KumarRandom(r, p, 1.1596),
-      lambda r, p : KumarRandom(r, p, 1.3),
-      lambda r, p : KumarRandom(r, p, 1.4),
-      lambda r, p : KumarRandom(r, p, 1.5),
-      ClassicRandom,])
   
 
-def RobustRhoMu(requests, pred):
+def RobustRhoMu(requests, pred, sigmas):
   return Combine_rand_discrete(requests, pred, [
       FTP,
       lambda r, p : RhoMu_paretomu(r, p, 1.1),
@@ -664,220 +561,9 @@ def RobustRhoMu(requests, pred):
       lambda r, p : RhoMu_paretomu(r, p, 1.4),
       lambda r, p : RhoMu_paretomu(r, p, 1.5),
       ClassicRandom,])
-
-
-def RobustAngelo(requests, pred):
-  return Combine_rand(requests, pred, [
-      FTP,   
-      lambda r, p : AngelopoulosDet(r, p, 1.1),
-      lambda r, p : AngelopoulosDet(r, p, 1.1596),
-      lambda r, p : AngelopoulosDet(r, p, 1.3),
-      lambda r, p : AngelopoulosDet(r, p, 1.4),
-      lambda r, p : AngelopoulosDet(r, p, 1.5),
-      ClassicRandom,])
   
     
 # #################### Combining schemes end here ####################
-
-
-# ################### Multiple sleep states (DPM) start here ###############
-# algorithms return a list of times at which they switch to the next state
-
-
-def OPT_multiple(requests, pred=[]):
-  history = []
-  for t, req in enumerate(requests):
-    history.append([])
-    current_state = 0
-    current_cost = requests[t]
-    # go through the states and compute their cost
-    for i,(power, wake) in enumerate(zip(POWER_CONSUMPTIONS,WAKE_UP_COSTS)):
-      if current_cost > power*requests[t]+wake:
-        current_cost = power*requests[t]+wake
-        current_state = i
-        
-    # switch to the best state at the beginning
-    for j in range(current_state):
-      history[t].append(0)
-  return history
-
-# similar to OPT but based on the predictions
-def FTP_multiple(requests, pred=[]):
-  history = []
-  for t, req in enumerate(requests):
-    history.append([])
-    current_state = 0
-    current_predicted_cost = pred[t]
-    for i,(power, wake) in enumerate(zip(POWER_CONSUMPTIONS,WAKE_UP_COSTS)):
-      if current_predicted_cost > power*pred[t]+wake :
-        current_state = i
-        current_predicted_cost = power*pred[t]+wake
-    for j in range(current_state):
-      history[t].append(0)
-  return history
-
-# follows the lower envelope of the cost functions
-def Online_multiple(requests, pred=[]):
-  history = []
-  step_power=[]
-  step_wakeup = []
-  for i in range(len(POWER_CONSUMPTIONS)-1):
-    step_power.append(POWER_CONSUMPTIONS[i]-POWER_CONSUMPTIONS[i+1])
-    step_wakeup.append(WAKE_UP_COSTS[i+1]-WAKE_UP_COSTS[i])
-  for t, req in enumerate(requests):
-    history.append([])
-    for power,wake in zip(step_power,step_wakeup): 
-      switch = wake/power
-      if switch > requests[t]:
-        break
-      else:
-        history[t].append((switch))
-  return history
-  
-def RhoMu_multiple(requests, pred=[], rho=RHO):
-  history = [] * len(requests)
-  step_power=[]
-  step_wakeup = []
-  mu = ParetoMu(rho)
-  for i in range(len(POWER_CONSUMPTIONS)-1):
-    step_power.append(POWER_CONSUMPTIONS[i]-POWER_CONSUMPTIONS[i+1])
-    step_wakeup.append(WAKE_UP_COSTS[i+1]-WAKE_UP_COSTS[i])
-  for t, req in enumerate(requests):
-    history.append([])
-    p = np.random.rand()
-    for power,wake in zip(step_power,step_wakeup):
-      scale_pred = pred[t] * power/wake
-      if (CDF(mu,rho,scale_pred,1) <= p):
-        break
-      else:
-        scale_switch = inverse(lambda x: CDF(mu,rho,scale_pred, x)) (p)
-        switch = scale_switch * wake/power
-        if switch > requests[t]:
-          break
-        else:
-          history[t].append(switch)
-  return history
-
-def RandomOnline_multiple(requests, pred=[]):
-  return RhoMu_multiple(requests, [0]*len(requests), rho = np.exp(1)/(np.exp(1)-1))
-
-def Prudent_Bp(mu, rho, pred, x):
-  Bp = 0
-  step_power=[]
-  step_wakeup = []
-  for i in range(len(POWER_CONSUMPTIONS)-1):
-    step_power.append(POWER_CONSUMPTIONS[i]-POWER_CONSUMPTIONS[i+1])
-    step_wakeup.append(WAKE_UP_COSTS[i+1]-WAKE_UP_COSTS[i])
-  for power,wake in zip(step_power,step_wakeup):
-    scale_pred = pred * power/wake
-    # CDF at t' gives us value at t = (wake/power)*t'
-    scale_x = x * power/wake
-    Bp = Bp + wake * CDF(mu, rho, scale_pred, scale_x)
-  return Bp
-
-def RhoMu_multiple_prudent(requests, pred=[], rho=RHO):
-  history = [] * len(requests)
-  mu = ParetoMu(rho)
-  for t, req in enumerate(requests):
-    history.append([])
-    for i in range(1,len(POWER_CONSUMPTIONS)):
-      p = np.random.rand()
-      if (Prudent_Bp(mu,rho,pred[t],0) >= WAKE_UP_COSTS[i]):
-        history[t].append(0)
-      elif (Prudent_Bp(mu,rho,pred[t],1) < WAKE_UP_COSTS[i]):
-        break
-      else:
-	# we switch to i once Bp = beta[i-1] + p*(beta[i] - beta[i-1])
-        switch = inverse(lambda x: Prudent_Bp(mu,rho,pred[t],x)) (WAKE_UP_COSTS[i-1] + p*(WAKE_UP_COSTS[i]-WAKE_UP_COSTS[i-1]))
-        if switch > requests[t]:
-          break
-        else:
-          history[t].append(switch)
-  return history
-
-def RandomOnline_multiple_prudent(requests, pred=[]):
-  return RhoMu_multiple_prudent(requests, [0]*len(requests), rho = np.exp(1)/(np.exp(1)-1))
-
-
-def Kumar_multiple(requests, pred=[], rho=RHO):
-  history = [] * len(requests)
-  step_power=[]
-  step_wakeup = []
-  for i in range(len(POWER_CONSUMPTIONS)-1):
-    step_power.append(POWER_CONSUMPTIONS[i]-POWER_CONSUMPTIONS[i+1])
-    step_wakeup.append(WAKE_UP_COSTS[i+1]-WAKE_UP_COSTS[i])
-  lambd = inverse(lambda x : x/(1-np.exp(-x))) (rho)
-  for t, req in enumerate(requests):
-    history.append([])
-    p = np.random.rand()
-    for power,wake in zip(step_power,step_wakeup):
-      scale_pred = pred[t] * power/wake
-      k = lambd if scale_pred >= 1 else 1/lambd
-      scale_switch = np.log(1+p*(np.expm1(k)))
-      switch = scale_switch * wake/power
-      if switch > requests[t]:
-        break
-      else:
-        history[t].append(switch)
-  return history
-
-def Prudent_Bp_Kumar(lambd, pred, x):
-  Bp = 0
-  step_power=[]
-  step_wakeup = []
-  for i in range(len(POWER_CONSUMPTIONS)-1):
-    step_power.append(POWER_CONSUMPTIONS[i]-POWER_CONSUMPTIONS[i+1])
-    step_wakeup.append(WAKE_UP_COSTS[i+1]-WAKE_UP_COSTS[i])
-  for power,wake in zip(step_power,step_wakeup): 
-    scale_pred = pred * power/wake
-    # CDF at t' gives us value at t = (wake/power)*t'
-    scale_x = x * power/wake
-    k = lambd if scale_pred >= 1 else 1/lambd
-    cdf = np.expm1(scale_x) / np.expm1(k)
-    if cdf > 1: cdf = 1
-    Bp = Bp + wake * cdf
-  return Bp
-
-def Kumar_multiple_prudent(requests, pred=[], rho=RHO):
-  history = [] * len(requests)
-  lambd = inverse(lambda x : x/(1-np.exp(-x))) (rho)
-  for t, req in enumerate(requests):
-    history.append([])
-    for i in range(1,len(POWER_CONSUMPTIONS)):
-      p = np.random.rand()
-      if (Prudent_Bp_Kumar(lambd,pred[t],0) >= WAKE_UP_COSTS[i]):
-        history[t].append(0)
-      elif (Prudent_Bp_Kumar(lambd,pred[t],1) < WAKE_UP_COSTS[i]):
-        break
-      else:
-        switch = inverse(lambda x: Prudent_Bp_Kumar(lambd,pred[t],x)) (WAKE_UP_COSTS[i-1] + p*(WAKE_UP_COSTS[i]-WAKE_UP_COSTS[i-1]))
-        if switch > requests[t]:
-          break
-        else:
-          history[t].append(switch)
-  return history
-
-
-def Angelo_multiple(requests, pred=[], rho=RHO):
-  history = [] * len(requests)
-  step_power=[]
-  step_wakeup = []
-  for i in range(len(POWER_CONSUMPTIONS)-1):
-    step_power.append(POWER_CONSUMPTIONS[i]-POWER_CONSUMPTIONS[i+1])
-    step_wakeup.append(WAKE_UP_COSTS[i+1]-WAKE_UP_COSTS[i])
-  for t, req in enumerate(requests):
-    history.append([])
-    for power, wake in zip(step_power, step_wakeup):
-      scale_pred = pred[t] * power/wake
-      scale_switch = 1 if scale_pred <= 1 else rho - 1
-      switch = scale_switch * wake/power
-      if switch > requests[t]:
-        break
-      else:
-        history[t].append(switch)
-  return history
-
-
 
 # utils for Blum&Burch combination
 
@@ -1007,95 +693,6 @@ def Combine_rand_multiple(requests, pred, algs, epsilon=0.1):
   return history
 
 
-
-def RobustFTP_multiple_prudent(requests, pred):
-  return Combine_rand_multiple(requests, pred, (FTP_multiple, RandomOnline_multiple_prudent))
-
-def Robust_multiple(requests, pred, algorithm, rhos, robust_algorithm):
-  return Combine_rand_multiple(requests, pred,
-    [FTP_multiple,] + [lambda r, p : algorithm(r, p, rho) for rho in rhos] + [robust_algorithm,])
-
-def RobustKumar_multiple(requests, pred):
-  return Robust_multiple(
-    requests, pred,
-    Kumar_multiple,
-    (1.1, 1.1595, 1.3, 1.4, 1.5),
-    RandomOnline_multiple)
-
-def RobustRhoMu_multiple(requests, pred):
-  return Robust_multiple(
-    requests, pred,
-    RhoMu_multiple,
-    (1.1, 1.1595, 1.3, 1.4, 1.5),
-    RandomOnline_multiple)
-
-def RobustAngelo_multiple(requests, pred):
-  return Robust_multiple(
-    requests, pred,
-    Angelo_multiple,
-    (1.1, 1.1595, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9),
-    Online_multiple)
-
-def RobustKumar_multiple_prudent(requests, pred):
-  return Robust_multiple(
-    requests, pred,
-    Kumar_multiple_prudent,
-    (1.1, 1.1595, 1.3, 1.4, 1.5),
-    RandomOnline_multiple_prudent)
-
-def RobustRhoMu_multiple_prudent(requests, pred):
-  return Robust_multiple(
-    requests, pred,
-    RhoMu_multiple_prudent,
-    (1.1, 1.1595, 1.3, 1.4, 1.5),
-    RandomOnline_multiple_prudent)
-
-
-# ################### Multiple sleep states end here ###############
-
-
-# ############### Define algorithms with a prescribed rho (necessary for parallelism) ##########
-
-
-def ApplyRho(alg, rho):
-  algo = lambda requests, pred=[]: alg(requests, pred, rho)
-#  algo.__name__ = alg.__name__ + '[rho=%0.3f]' % rho
-  return algo
-
-def RhoMu_paretomu_1_05(r,p):
-  return ApplyRho(RhoMu_paretomu, 1.05)(r,p)
-def RhoMu_paretomu_1_1(r,p):
-  return ApplyRho(RhoMu_paretomu, 1.1)(r,p)
-def RhoMu_paretomu_1_1596(r,p):
-  return ApplyRho(RhoMu_paretomu, 1.1596)(r,p)
-def RhoMu_paretomu_1_216(r,p):
-  return ApplyRho(RhoMu_paretomu, 1.216)(r,p)
-def RhoMu_paretomu_1_3(r,p):
-  return ApplyRho(RhoMu_paretomu, 1.3)(r,p)
-def RhoMu_paretomu_1_4(r,p):
-  return ApplyRho(RhoMu_paretomu, 1.4)(r,p)
-def RhoMu_paretomu_1_5(r,p):
-  return ApplyRho(RhoMu_paretomu, 1.5)(r,p)
-# def RhoMu_multiple_1_1596(r,p):
-#   return ApplyRho(RhoMu_multiple, 1.1596)(r,p)
-# def RhoMu_multiple_1_216(r,p):
-#   return ApplyRho(RhoMu_multiple, 1.216)(r,p)
-
-def KumarRandom_1_1596(r,p):
-  return ApplyRho(KumarRandom, 1.1596)(r,p)
-def KumarRandom_1_216(r,p):
-  return ApplyRho(KumarRandom, 1.216)(r,p)
-# def Kumar_multiple_1_1596(r,p):
-#   return ApplyRho(Kumar_multiple, 1.1596)(r,p)
-# def Kumar_multiple_1_216(r,p):
-#   return ApplyRho(Kumar_multiple, 1.216)(r,p)
-
-def AngelopoulosDet_1_1596(r,p):
-  return ApplyRho(AngelopoulosDet, 1.1596)(r,p)
-def AngelopoulosDet_1_216(r,p):
-  return ApplyRho(AngelopoulosDet, 1.216)(r,p)
-
-
 # ############## End algorithm definitions ######################
 
 # #################### Utilities start here ####################
@@ -1122,6 +719,33 @@ def Cost(history, requests, algname=""):
   if "multiple" in algname:
     return sum(Cost_from_history(requests,history))
   # return sum([B+x if x < req else req for x,req in zip(history,requests)])
-  return sum([(B+x-1)/min(B,req) if x <= req else req/min(B,req) for x,req in zip(history,requests)])
+  return sum([(B+x)/min(B,req) if x < req else req/min(B,req) for x,req in zip(history,requests)])
+
+def Cost_history(history, requests, algname=""):
+  assert len(history) == len(requests)
+  cum_cost = 0
+  ret = []
+  for t in range(len(history)):
+    if history[t] <= requests[t]:
+      # cum_cost += (B+history[t])
+      cum_cost += (B+history[t]-1) / min(B, requests[t])
+    else:
+      # cum_cost += requests[t]
+      cum_cost += requests[t] / min(B, requests[t])
+    ret.append(cum_cost)
+  return ret
+
+def CR_history(history, requests, algname=""):
+  assert len(history) == len(requests)
+  ret = []
+  for t in range(len(history)):
+    if history[t] <= requests[t]:
+      # cum_cost += (B+history[t])
+      cost = (B+history[t]-1) / min(B, requests[t])
+    else:
+      # cum_cost += requests[t]
+      cost = requests[t] / min(B, requests[t])
+    ret.append(cost)
+  return ret
 
 # #################### Utilities end here ####################
