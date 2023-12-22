@@ -108,6 +108,7 @@ def FTP(requests, pred, sigmas=[]):
      res[t] = 1 if np.round(pred[t])>=B else requests[t]+1000
   return res
 
+# Deterministic PAC algorithm
 def PACPredict(requests, pred, sigmas, d):
   res = [0] * len(requests)
   z = norm.ppf(1-d/2)
@@ -195,6 +196,7 @@ def PACPredictRand(requests, pred, sigmas, d):
     result[t] = action
   return result
 
+# Randomized PAC Algorithm
 # Implementation using cvxpy
 def PACPredictRandCVX(requests, pred, sigmas, d):
   # NOTE: assumes skiing days lower bounded by 1
@@ -495,6 +497,7 @@ def Combine_rand(requests, pred, algs, epsilon=0.1):
   return history
 
 
+# Our Online Learning algorithm
 def OnlineLearning(requests, pred, sigmas, s_num=8, epsilon=0.1, A=1, B=B):
   diameter = 0.5
   beta = 1.0 - 0.5 * epsilon

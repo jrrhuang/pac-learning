@@ -105,13 +105,8 @@ def PlotPredRandom(datasets, preds, num_runs, output_basename=None, load_json=No
 
   sig = 6
   # # PREDICTIONS
-  # predictions = [predictor(SIGMA) for _ in range(num_runs)]
-  # predictions = [predictor([0, SIGMA] * int(len(requests) / 2)) for _ in range(num_runs)]
-  # predictions = [predictor([SIGMA*(np.sin(x)+1) / 2 for x in range(len(requests))]) for _ in range(num_runs)]
+  # # Generated sequence of random predictions (based on variance sequence)
   predictions = [predictor(([0]*10+[sig]*10) * int(len(requests) / 20)) for _ in range(num_runs)]
-  # predictions = [predictor([0 if i != 9 else SIGMA for i in range(10)] * int(len(requests) / 10)) for _ in range(num_runs)]
-  # predictions = [predictor(np.linspace(0,SIGMA,len(requests))) for _ in range(num_runs)]
-  # predictions = [predictor([0]*(len(requests)//2) + [SIGMA]*(len(requests)//2)) for _ in range(num_runs)]
 
   for i, algorithm in enumerate(ALGORITHMS_ONLINE):
       output = algorithm(requests)
@@ -123,13 +118,8 @@ def PlotPredRandom(datasets, preds, num_runs, output_basename=None, load_json=No
 
   # # SIGMAS
   # Construct list of sigmas for every timestep
-  # sigmas = [SIGMA] * len(requests)
-  # sigmas = [0, SIGMA] * int(len(requests) / 2)
-  # sigmas = [SIGMA*(np.sin(x)+1) / 2 for x in range(len(requests))]
-  # sigmas = [0 if i != 9 else SIGMA for i in range(10)] * int(len(requests) / 10)
+  # This should match the sequences of sigmas inputted into PREDICTIONS above
   sigmas = ([0]*10+[sig]*10) * int(len(requests) / 20)
-  # sigmas = np.linspace(0,SIGMA,len(requests))
-  # sigmas = [0]*(len(requests)//2) + [SIGMA]*(len(requests)//2)
 
   with Pool() as pool:
     grid = list(itertools.product(range(len(ALGORITHMS_PRED)), range(num_runs)))
